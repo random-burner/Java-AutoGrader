@@ -61,5 +61,6 @@ let projectPath = '';
         for (const result of res.tests) {
             outputStr += result.success ? '\x1b[34m✓' : '\x1b[31mX';
         }
+        console.log(outputStr);
     }
 })();
