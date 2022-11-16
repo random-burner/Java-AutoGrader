@@ -316,9 +316,10 @@ def compile_projects(projects_dir: str) -> None:
     executor.shutdown()
 
 
-def _test_project(project_path: str, std_input: str, std_output: str, tries_left=3) -> Tuple[bool, int]:
+def _test_project(i: int, project_path: str, std_input: str, std_output: str, tries_left=3) -> Tuple[bool, int, int]:
     """
     Tests a project with an input and an output
+    :param i: Test Index - Need b/c as_completed doesn't return in order
     :param project_path: Path to project
     :param std_input: Input to supply
     :param std_output: Output Expected
@@ -327,13 +328,16 @@ def _test_project(project_path: str, std_input: str, std_output: str, tries_left
     """
     main_class = _get_main_file(project_path)
     if not main_class:  # Returns false if main class isn't found
-        return False, -1
+        return False, -1, i
 
     file_name = _get_file_name(main_class)
 
     try:
         # Defining this here b/c very long
-        classpath = f"{os.path.abspath(project_path)}{';' if platform.system() == 'Windows' else ':'}{os.path.abspath(os.path.join(__file__, '../../mixins/*'))}"
+        separator = ';' if platform.system() == 'Windows' else ':'
+        mixins_path = os.path.join(__file__, '../../mixins/*')
+
+        classpath = f"{os.path.abspath(project_path)}{separator}{os.path.abspath(mixins_path)}"
 
         # A bunch of weird stuff with subprocess
         proc = subprocess.run(f"java -cp \"{classpath}\" {file_name}", cwd=os.path.abspath(project_path),
@@ -341,13 +345,13 @@ def _test_project(project_path: str, std_input: str, std_output: str, tries_left
 
         # Just normalizing the output
         resp = proc.stdout.strip().replace("\r\n", "\n")
-        return std_output == resp, proc.returncode
+        return std_output == resp, proc.returncode, i
     except subprocess.TimeoutExpired:
         # Catching timeout error - retrying as necessary
         if tries_left > 0:
-            return _test_project(project_path, std_input, std_output, tries_left=tries_left - 1)
+            return _test_project(i, project_path, std_input, std_output, tries_left=tries_left - 1)
         else:
-            return False, 1
+            return False, 1, i
 
 
 def _get_tests(test_path: str) -> List[Dict[str, str]]:
@@ -366,7 +370,8 @@ def _get_tests(test_path: str) -> List[Dict[str, str]]:
 def test_projects(proj_path: str, test_path: str) -> Dict[str, List[Tuple[bool, int]]]:
     """
     Tests all projects in a directory
-    :param projects_dir: Project Directory
+    :param proj_path: Project Directory
+    :param test_path: Test File Path
     :return: dict - project_name: [(success, exit_code)]
     """
     executor = ThreadPoolExecutor(20)  # Only 30 threads cause why not :>
@@ -376,12 +381,17 @@ def test_projects(proj_path: str, test_path: str) -> Dict[str, List[Tuple[bool, 
     # _get_file_name also not meant to be used here (works tho) :p
     # Ugly ass list comprehension, basically just creates an
     # project_name: [(success, exit_code), ...]
-    to_return = {_get_file_name(proj): [executor.submit(_test_project, proj, t["input"], t["output"]) for t in tests]
-                 for proj in _get_projects(proj_path)}
+    to_return = {_get_file_name(proj): [executor.submit(_test_project, i, proj, t["input"], t["output"]) for i, t in
+                                        enumerate(tests)] for proj in _get_projects(proj_path)}
 
     # Wait for everything to finish .-.
     for t in to_return.values():
-        for i, f in enumerate(as_completed(t)):
-            t[i] = f.result()  # Just setting result instead of a future obj
+        for f in as_completed(t):
+            # This is so jank
+            # as_completed() doesn't return in order so we have to output the index
+            # in the return of the func and set the value in the list
+            temp = f.result()
+            t[temp[2]] = temp[:2]
 
+    executor.shutdown()
     return to_return
