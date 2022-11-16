@@ -6,8 +6,8 @@ const fs = require('fs');
  * @param {boolean} obj.deleteExisting - Whether to delete existing files or not
  * @param {string} [obj.projectsDir='./projects'] - Directory to clean up
  */
-function cleanupFolder({ deleteExisting, projectsDir = './projects' }) {
-    fs.mkdirSync(projectsDir, {});
+function cleanupFolder({ deleteExisting, projectsDir = './projects/' }) {
+    fs.mkdirSync(projectsDir, { recursive: true });
 
     if (deleteExisting) {
         fs.readdirSync(projectsDir).forEach(file => {

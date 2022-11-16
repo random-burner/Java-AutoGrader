@@ -18,8 +18,8 @@ let projectPath = '';
         process.stdout.write('Specify Project Name (name of test file): ');
         projectName = (await iterator.next()).value;
 
-        testPath = process.cwd() + `../tests/${projectName}.json`;
-        projectPath = process.cwd() + `../projects/${projectName}.json`;
+        testPath = `./tests/${projectName}.json`;
+        projectPath = `./projects/${projectName}`;
     
         if (!fs.existsSync(testPath)) {
             process.stdout.write(`There are no tests that match name ${projectName}. Continue?`);
@@ -33,12 +33,12 @@ let projectPath = '';
         let shouldDeleteExisting = (await iterator.next()).value.toLowerCase();
         shouldDeleteExisting = shouldDeleteExisting == 'yes' || shouldDeleteExisting == 'y';
     
-        autograder.cleanup_folder({ deleteExisting: shouldDeleteExisting, projectsDir: projectPath });
+        autograder.cleanupFolder({ deleteExisting: shouldDeleteExisting, projectsDir: projectPath });
     
         process.stdout.write('List Projects separated by spaces: ');
         let projects = (await iterator.next()).value.trim().split(' ');
-        autograder.download_projects({ projects, downloadDir: projectPath });
-        autograder.compile_projects({ projectsDir: projectPath });
+        autograder.downloadProjects({ projects, downloadDir: projectPath });
+        autograder.compileProjects({ projectsDir: projectPath });
     }
 
     process.stdout.write('Do you want to test projects (y/n): ');
@@ -47,8 +47,8 @@ let projectPath = '';
         if (projectName == '') {
             process.stdout.write('Specify Project Name (name of test file): ');
             projectName = (await iterator.next()).value;
-            testPath = process.cwd() + `../tests/${projectName}.json`;
-            projectPath = process.cwd() + `../projects/${projectName}.json`;
+            testPath = `./tests/${projectName}.json`;
+            projectPath = `./projects/${projectName}`;
         }
 
         if (!fs.existsSync(testPath)) {
