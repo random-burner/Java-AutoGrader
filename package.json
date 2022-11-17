@@ -1,0 +1,26 @@
+{
+  "dependencies": {
+    "yauzl": "^2.10.0"
+  },
+  "name": "java-autograder",
+  "description": "A project to make grading a lot of projects easier",
+  "version": "1.0.0",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/random-burner/Java-AutoGrader.git"
+  },
+  "author": "random-burner",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/random-burner/Java-AutoGrader/issues"
+  },
+  "homepage": "https://github.com/random-burner/Java-AutoGrader#readme"
+}

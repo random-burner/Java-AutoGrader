@@ -7,3 +7,5 @@ venv
 !/projects/*/tests
 
 mixins/blah/*
+
+node_modules/

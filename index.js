@@ -37,8 +37,8 @@ let projectPath = '';
     
         process.stdout.write('List Projects separated by spaces: ');
         let projects = (await iterator.next()).value.trim().split(' ');
-        autograder.downloadProjects({ projects, downloadDir: projectPath });
-        autograder.compileProjects({ projectsDir: projectPath });
+        autograder.downloadProjects(projects, projectPath);
+        autograder.compileProjects(projectPath);
     }
 
     process.stdout.write('Do you want to test projects (y/n): ');
