@@ -1,3 +1,4 @@
+from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
@@ -5,50 +6,27 @@ import platform
 import re
 import shutil
 import subprocess
-import time
-from typing import Optional, List, Dict, Tuple
 import zipfile
 
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
+import requests
 
 from autograder.setup import in_replit
 
 
-# I literally have no clue what this does
-def _read_cookies() -> List[Dict]:
-    """
-    Reads cookies from cookie file and returns a dict
-    :return: List of cookies
-    """
-    cookies = []
-    with open(os.path.abspath(os.path.join(__file__, "../../config/cookies.txt")), 'r') as f:  # Cookie file
-        for e in f:
-            e = e.strip()
-            if e.startswith('#'):
-                continue
-            k = e.split('\t')
-            if len(k) < 3:
-                continue  # not enough data
-            # with expiry
-            cookies.append({'name': k[-2], 'value': k[-1], 'expiry': int(k[-3])})
-    return cookies
-
-
-def _sanitize_url(link: str) -> Optional[str]:
+def _sanitize_url(link: str) -> str | None:
     """
     Extracted this function out b/c need to sanitize another url
     :param link: Link to sanitize
     :return: Repl.it link w/o weird stuff messing with dl
     """
-    pattern = r"https://(?:(?:replit\.com)|(?:repl\.it))/(?:(?:@\w+/[^#?\s]+)|(?:join/[^#?\s]+))"
+    # pattern = r"https://(?:(?:replit\.com)|(?:repl\.it))/(?:(?:@\w+/[^#?\s]+)|(?:join/[^#?\s]+))"
+    pattern = r"https://(?:replit\.com|repl\.it)/@\w+/[^#?\s]+"
 
-    if temp := re.findall(pattern, link):
-        return temp[0]
+    if temp := re.search(pattern, link):
+        return temp.group()
 
 
-def _get_valid_projects(input_projects: Tuple[str]) -> List[str]:
+def _get_valid_projects(input_projects: tuple[str]) -> list[str]:
     """
     Returns the list of valid projects formatted correctly
     :param input_projects: List of inputted projects
@@ -70,26 +48,21 @@ def _get_valid_projects(input_projects: Tuple[str]) -> List[str]:
     return success
 
 
-def _unzip_and_clean(zip_path: str, folder_path: str) -> None:
+def _unzip_and_clean(zip_path: str) -> None:
     """
     Unzips the file at zip_path to folder_path and cleans up every non .java file
     :param zip_path: Path to zip file
-    :param folder_path: Path to folder
     :return: None
     """
-    print(f"Unzipping project {folder_path}")
-
-    # Busy waiting for file to finish :p
-    while not os.path.isfile(zip_path):
-        time.sleep(1)
+    print(f"Unzipping project {zip_path}")
 
     with zipfile.ZipFile(zip_path) as f:  # Unzip zip file
-        f.extractall(folder_path)
+        f.extractall(zip_path[:-4])
 
     os.remove(zip_path)  # Delete zip file
 
     # Walking through directory, getting rid of anything not .java
-    walk = list(os.walk(folder_path))
+    walk = list(os.walk(zip_path[:-4]))
     for path, dirs, files in walk[::-1]:
         flag = False  # If java files or not
         for file in files:
@@ -99,10 +72,10 @@ def _unzip_and_clean(zip_path: str, folder_path: str) -> None:
                 flag = True
 
         # no .java files and no files = empty folder :>
-        if len(os.listdir(path)) == 0 and not flag:
+        if not os.listdir(path) and not flag:
             os.rmdir(path)
 
-    print(f"Finished unzipping project {folder_path}")
+    print(f"Finished unzipping project {zip_path}")
 
 
 def download_projects(*input_projects: str, download_dir: str) -> None:
@@ -113,81 +86,56 @@ def download_projects(*input_projects: str, download_dir: str) -> None:
     :return: None
     """
     projects = _get_valid_projects(input_projects)
-
-    # Selenium requires absolute paths for download
-    chrome_options = webdriver.ChromeOptions()
-    prefs = {"download.default_directory": download_dir}
-    chrome_options.add_experimental_option('prefs', prefs)
-
-    # headless
-    chrome_options.headless = True
-
-    if in_replit():  # We need these settings if we're running in replit
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-
-    if in_replit():  # Don't specify path if we're not in replit
-        driver = webdriver.Chrome(options=chrome_options)
-    else:
-        # I'm not sure if repl.it can use ChromeDriverManager but it works w/o
-        ser = Service(os.path.abspath(ChromeDriverManager().install()))
-        driver = webdriver.Chrome(service=ser, options=chrome_options)
-
-    driver.get("https://replit.com/")
-
-    # Loading cookies
-    for c in _read_cookies():
-        driver.add_cookie(c)
-
-    # Getting it again cause replit is DUMB >:(
-    driver.get("https://replit.com/~")
-
-    # It'll go to login page if cookies don't work
-    if driver.current_url == "https://replit.com/login":
-        driver.quit()
-        raise RuntimeError("Reset the cookies so you actually log in")
-
     temp_index = len(os.listdir(download_dir))  # Making so this is sorted by order you put this in :>
 
+    headers = {
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,"
+                  "image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+        "accept-language": "en-US,en;q=0.9",
+        "cache-control": "no-cache",
+        "pragma": "no-cache",
+        "sec-ch-ua": '"Google Chrome";v="107", "Chromium";v="107", "Not=A?Brand";v="24"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": ''"Windows"'',
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "none",
+        "sec-fetch-user": "?1",
+        "service-worker-navigation-preload": "true",
+        "upgrade-insecure-requests": "1",
+        "cookie": f"connect.sid={os.environ.get('CONNECT_SID')}"
+    }
+
     for proj in projects:
-        driver.get(proj)
+        if formatted_url := _sanitize_url(proj):
+            resp = requests.get(f"{formatted_url}.zip", headers=headers)
 
-        if "404" in driver.title:  # Actually checking if link works
-            print(f"Could not get replit for project {proj}")
-            continue
+            if resp.status_code == 200:
+                *_, user, name = formatted_url.split("/")
+                download_path = os.path.abspath(f"{download_dir}/{temp_index}-{user}-{name}.zip")
 
-        formatted = _sanitize_url(f"{driver.current_url}")
-        if not formatted:  # This really shouldn't happen but it'll be fine
-            print(f"This should not occur! Could not sanitize url {driver.current_url}?")
-            continue
+                with open(download_path, "wb") as f:
+                    f.write(resp.content)
 
-        new_url = f"{formatted}.zip"  # Zipped url :>
-        driver.get(new_url)
+                _unzip_and_clean(zip_path=download_path)
 
-        if driver.current_url != new_url:  # It won't redirect if it's downloading
-            *_, user, name = formatted.split("/")
-
-            # Doing this now so we can limit how fast we download
-            _unzip_and_clean(os.path.abspath(f"{download_dir}/{name}.zip"),
-                             os.path.abspath(f"{download_dir}/{temp_index}-{user}-{name}"))
-            temp_index += 1
+                temp_index += 1
+            else:
+                print(f"Could not get replit for project {proj}. Maybe cookie error?")
         else:
-            print(f"Could not get download zip for project {proj}")
-
-    # Cleaning up
-    driver.quit()
+            print(f"Could not get replit for project {proj}. Url formatted wrong.")
 
 
-def _load_mixins() -> List[str]:
+def _load_mixins() -> list[str]:
     """
     Loads the mixins found in mixins/mixins.json
     :return: Mixins
     """
-    with open(os.path.join(__file__, "../../mixins/mixins.json")) as f:
+    with open(os.path.abspath(os.path.join(__file__, "../../mixins/mixins.json"))) as f:
         return json.load(f)
 
 
-def _inject_mixins(file_path: str, mixins: Dict[str, List[Dict[str, str]]]) -> bool:
+def _inject_mixins(file_path: str, mixins: dict[str, list[dict[str, str]]]) -> bool:
     """
     Injects mixins into a file
     :param file_path: Path of file to inject
@@ -216,7 +164,7 @@ def _inject_mixins(file_path: str, mixins: Dict[str, List[Dict[str, str]]]) -> b
     return True
 
 
-def _get_main_file(path: str) -> Optional[str]:
+def _get_main_file(path: str) -> str | None:
     """
     Gets the first instance of public static void main(String[] args)
     :param path: Path of he directory
@@ -256,7 +204,7 @@ def _get_file_name(path: str) -> str:
     return os.path.abspath(path).split("\\")[-1].split("/")[-1].rsplit(".", 1)[0]
 
 
-def _compile_project(path: str, mixins: Dict[str, List[Dict[str, str]]]) -> Tuple[bool, str]:
+def _compile_project(path: str, mixins: dict[str, list[dict[str, str]]]) -> tuple[bool, str]:
     """
     Compile a single project (internal)
     :param path: Path to project
@@ -275,8 +223,9 @@ def _compile_project(path: str, mixins: Dict[str, List[Dict[str, str]]]) -> Tupl
                     if not _inject_mixins(os.path.join(path, file), mixins):
                         return False, path
 
-        subprocess.run(["javac", "-cp", os.path.abspath(os.path.join(__file__, "../../mixins/*")),
-                        f"{_get_file_name(main_file)}.java"], cwd=path)  # Another hack :p
+        classpath = os.path.abspath(os.path.join(__file__, "../../mixins/*"))
+        file_name = f"{_get_file_name(main_file)}.java"
+        subprocess.run(f'javac -cp "{classpath}" {file_name}', cwd=path, shell=True)
         return True, path
 
 
@@ -316,7 +265,8 @@ def compile_projects(projects_dir: str) -> None:
     executor.shutdown()
 
 
-def _test_project(i: int, project_path: str, std_input: str, std_output: str, tries_left=3) -> Tuple[bool, int, int]:
+def _test_project(project_path: str, std_input: str, std_output: str,
+                  tries_left: int = 3) -> tuple[bool, int, str, str]:
     """
     Tests a project with an input and an output
     :param i: Test Index - Need b/c as_completed doesn't return in order
@@ -324,11 +274,11 @@ def _test_project(i: int, project_path: str, std_input: str, std_output: str, tr
     :param std_input: Input to supply
     :param std_output: Output Expected
     :param tries_left: Runs program this many tries before just returning a failure
-    :return: Test successful or not, exit code
+    :return: Test successful or not, exit code, std_output, real_output
     """
     main_class = _get_main_file(project_path)
     if not main_class:  # Returns false if main class isn't found
-        return False, -1, i
+        return False, -1, std_output, ""
 
     file_name = _get_file_name(main_class)
 
@@ -340,21 +290,22 @@ def _test_project(i: int, project_path: str, std_input: str, std_output: str, tr
         classpath = f"{os.path.abspath(project_path)}{separator}{os.path.abspath(mixins_path)}"
 
         # A bunch of weird stuff with subprocess
-        proc = subprocess.run(f"java -cp \"{classpath}\" {file_name}", cwd=os.path.abspath(project_path),
-                              input=std_input, text=True, capture_output=True, timeout=10)
+        proc = subprocess.run(f'java -cp "{classpath}" {file_name}', cwd=os.path.abspath(project_path),
+                              input=std_input, text=True, capture_output=True, timeout=10, shell=True)
 
         # Just normalizing the output
-        resp = proc.stdout.strip().replace("\r\n", "\n")
-        return std_output == resp, proc.returncode, i
+        resp = (proc.stderr or proc.stdout).strip().replace("\r\n", "\n")
+
+        return std_output == resp, proc.returncode, std_output, resp
     except subprocess.TimeoutExpired:
         # Catching timeout error - retrying as necessary
         if tries_left > 0:
             return _test_project(i, project_path, std_input, std_output, tries_left=tries_left - 1)
         else:
-            return False, 1, i
+            return False, -2, std_output, ""
 
 
-def _get_tests(test_path: str) -> List[Dict[str, str]]:
+def _get_tests(test_path: str) -> list[dict[str, str]]:
     """
     Loads all the tests given a project name
     :param test_path: Path to json file containing tests
@@ -367,31 +318,30 @@ def _get_tests(test_path: str) -> List[Dict[str, str]]:
         return json.load(f)
 
 
-def test_projects(proj_path: str, test_path: str) -> Dict[str, List[Tuple[bool, int]]]:
+def test_projects(proj_path: str, test_path: str) -> dict[str, list[tuple[bool, int]]]:
     """
     Tests all projects in a directory
     :param proj_path: Project Directory
     :param test_path: Test File Path
     :return: dict - project_name: [(success, exit_code)]
     """
-    executor = ThreadPoolExecutor(20)  # Only 30 threads cause why not :>
+    executor = ThreadPoolExecutor(3 if in_replit() else 20)  # Only 3 threads in replit b/c lower system resources
 
     tests = _get_tests(test_path)  # Grabbing all the tests
 
     # _get_file_name also not meant to be used here (works tho) :p
     # Ugly ass list comprehension, basically just creates an
-    # project_name: [(success, exit_code), ...]
-    to_return = {_get_file_name(proj): [executor.submit(_test_project, i, proj, t["input"], t["output"]) for i, t in
-                                        enumerate(tests)] for proj in _get_projects(proj_path)}
+    # {project_name: [(success, exit_code), ...]}
+    to_return = {
+        _get_file_name(proj): executor.map(
+            lambda x: _test_project(*x),
+            ((proj, t["input"], t["output"]) for t in tests)
+        ) for proj in _get_projects(proj_path)
+    }
 
-    # Wait for everything to finish .-.
-    for t in to_return.values():
-        for f in as_completed(t):
-            # This is so jank
-            # as_completed() doesn't return in order so we have to output the index
-            # in the return of the func and set the value in the list
-            temp = f.result()
-            t[temp[2]] = temp[:2]
+    # We submit eveything first and then wait for everything to finish 
+    for t in to_return:
+        to_return[t] = list(to_return[t])
 
     executor.shutdown()
     return to_return
