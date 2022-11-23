@@ -1,5 +1,6 @@
 const { exec } = require('child_process');
 const fs = require('fs');
+const path = require('path');
 const yauzl = require('yauzl');
 const { sleep, walkDirSync } = require('../util');
 
@@ -31,8 +32,8 @@ function getValidProjects(inputProjects) {
         }
     }
 
-    console.log(`Rejected Projects: {${fail.join(', ')}}`);
-    console.log(`Accepted Projects: {${success.join(', ')}}`);
+    console.log(`Rejected Projects: [ ${fail.join(', ')} ]`);
+    console.log(`Accepted Projects: [ ${success.join(', ')} ]`);
 
     return success;
 }
@@ -102,7 +103,7 @@ async function downloadProjects(inputProjects, downloadDir) {
             let splitURL = formattedURL.split('/');
             let username = splitURL[3];
             let projectName = splitURL[4];
-            let downloadPath = `${downloadDir}/${idx}-${username}-${projectName}.zip`;
+            let downloadPath = `${downloadDir}/${projectIndex}-${username}-${projectName}.zip`;
 
             fs.writeFileSync(downloadPath, Buffer.from(new Uint8Array(await req.blob())));
 
@@ -267,7 +268,15 @@ async function compileProject(projectPath, mixins) {
  * @returns {string[]} List of projects
  */
 function getProjects(projectDir) {
-    // TODO: What the fuck is this
+    let folders = [];
+    for (const entry of fs.readdirSync(projectDir)) {
+        if (!fs.statSync(path.resolve(projectDir, entry)).isDirectory()) {
+            continue;
+        }
+        folders.push(path.resolve(projectDir, entry));
+    }
+    console.log(folders);
+    return folders;
 }
 
 /*

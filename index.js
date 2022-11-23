@@ -33,7 +33,7 @@ let projectPath = '';
         let shouldDeleteExisting = (await iterator.next()).value.toLowerCase();
         shouldDeleteExisting = shouldDeleteExisting == 'yes' || shouldDeleteExisting == 'y';
     
-        autograder.cleanupFolder({ deleteExisting: shouldDeleteExisting, projectsDir: projectPath });
+        autograder.cleanupFolder(projectPath, shouldDeleteExisting);
     
         process.stdout.write('List Replit links separated by spaces: ');
         let projects = (await iterator.next()).value.trim().split(' ');
