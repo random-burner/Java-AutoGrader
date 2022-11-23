@@ -402,6 +402,7 @@ function getTests(testPath) {
 async function testProjects(projectPath, testPath) {
     let tests = getTests(testPath);
 
+    // TODO: Update this, it doesn't make much sense as is
     // getFileName is also not meant to be used here (works tho) :p
     // Ugly ass list comprehension, basically just creates an
     // projectName: [(success, exitCode), ...]
