@@ -25,7 +25,7 @@ let projectPath = '';
             process.stdout.write(`There are no tests that match name ${projectName}. Continue?`);
             let shouldContinue = (await iterator.next()).value;
             if (shouldContinue != 'yes' && shouldContinue != 'y' && shouldContinue != '') {
-                process.exit(0);
+                return;
             }
         }
 
@@ -35,7 +35,7 @@ let projectPath = '';
     
         autograder.cleanupFolder({ deleteExisting: shouldDeleteExisting, projectsDir: projectPath });
     
-        process.stdout.write('List Projects separated by spaces: ');
+        process.stdout.write('List Replit links separated by spaces: ');
         let projects = (await iterator.next()).value.trim().split(' ');
         autograder.downloadProjects(projects, projectPath);
         autograder.compileProjects(projectPath);
@@ -53,14 +53,56 @@ let projectPath = '';
 
         if (!fs.existsSync(testPath)) {
             process.stdout.write(`There are no tests that match name ${projectName}.`);
-            process.exit(0);
+            return;
         }
 
-        let res = autograder.testProjects({ projectPath, testPath });
-        let outputStr = `Project \`${projectName}\` passed ${res.passedTests.reduce((a, b) => a + b, 0)}/${totalTests}`;
-        for (const result of res.tests) {
-            outputStr += result.success ? '\x1b[34m✓' : '\x1b[31mX';
+        /*
+        This returns an object that looks like this:
+{
+    'index-username-projectName': {
+        tests: [
+            {
+                success: true,
+                statusCode: 0,
+                output: '',
+                expectedOutput: ''
+            }
+        ],
+        passedTests: [],
+        failedTests: []
+    }
+}
+        */
+        let testedProjects = autograder.testProjects({ projectPath, testPath });
+        for (const projectID in testedProjects) {
+            let project = testedProjects[projectID];
+            let outputStr = `Project \`${projectName}\` passed ${project.passedTests.lengths}/${project.tests.length}`;
+            for (const result of testedProjects.tests) {
+                outputStr += result.success ? '\x1b[34m✓' : '\x1b[31mX';
+            }
+            console.log(outputStr);
+
+            for (const test of project.tests) {
+                if (test.success) {
+                    continue;
+                }
+
+                console.log(`------ TEST CASE ${i} ------`);
+                switch (code) {
+                    case 0:
+                        // TODO: Log reason test failed
+                        break;
+                    case -1:
+                        console.log('Could not find main class');
+                        break;
+                    case -2:
+                        console.log('Timed out');
+                        break;
+                    default:
+                        console.log(test.output);
+                        break;
+                }
+            }
         }
-        console.log(outputStr);
     }
 })();

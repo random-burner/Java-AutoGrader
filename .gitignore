@@ -9,3 +9,4 @@ venv
 mixins/blah/*
 
 node_modules/
+.env

@@ -2,24 +2,21 @@ const fs = require('fs');
 
 /**
  * Cleans up the projects directory
- * @param {Object} obj - An object.
- * @param {boolean} obj.deleteExisting - Whether to delete existing files or not
- * @param {string} [obj.projectsDir='./projects'] - Directory to clean up
+ * @param {string} [projectsDir='./projects'] - Directory to clean up
+ * @param {boolean} [deleteExisting=true] - Whether to delete existing files or not
  */
-function cleanupFolder({ deleteExisting, projectsDir = './projects/' }) {
-    fs.mkdirSync(projectsDir, { recursive: true });
-
+function cleanupFolder(projectsDir = './projects/', deleteExisting = true) {
     if (deleteExisting) {
-        fs.readdirSync(projectsDir).forEach(file => {
-            if (file.name == 'tests') {
-                return;
-            }
-
-            fs.rmSync(file, { recursive: true, force: true });
-        })
+        fs.rmSync(projectsDir, { recursive: true, force: true });
     }
+
+    fs.mkdirSync(projectsDir, { recursive: true });
 }
 
+/**
+ * Checks whether the .replit file exists
+ * @returns {boolean} - Whether the .replit file exists
+ */
 function inReplit() {
     return fs.existsSync('./.replit');
 }
@@ -27,4 +24,4 @@ function inReplit() {
 module.exports = {
     cleanupFolder,
     inReplit
-}
+};

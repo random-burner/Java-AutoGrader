@@ -4,41 +4,12 @@ const yauzl = require('yauzl');
 const { sleep, walkDirSync } = require('../util');
 
 /**
- * Reads cookies from cookie file and returns a dict
- * @returns {Cookie[]} List of cookies
- */
-function readCookies() {
-    let cookies = []
-    let f = fs.readFileSync('./config/cookies.txt', 'utf-8');
-    
-    for (const line of f.split('\n')) {
-        line = line.trim();
-        if (line.startsWith('#')) {
-            continue;
-        }
-        let fields = line.split('\t');
-        if (fields.length < 3) {
-            continue; // Not enough data
-        }
-        // With expiry
-        cookies.push({
-            name: fields[-2],
-            value: fields[-1],
-            expiry: fields[-3]
-        });
-    }
-
-    return cookies;
-}
-
-/**
  * Sanitize a given replit URL
  * @param {string} url - The URL to sanitize
  * @returns {string} Sanitized URL
  */
 function sanitizeURL(url) {
-    let regex = /https:\/\/(?:(?:replit\.com)|(?:repl\.it))\/(?:(?:@\w+\/[^#?\s]+)|(?:join\/[^#?\s]+))/;
-
+    let regex = /https:\/\/(?:replit\.com|repl\.it)\/@\w+\/[^#?\s]+/g;
     let match = url.match(regex);
     return match[0];
 }
@@ -69,10 +40,9 @@ function getValidProjects(inputProjects) {
 /**
  * Unzips the file at `zipPath` to `folderPath` and cleans up all non .java files
  * @param {string} zipPath - Path to zip file
- * @param {string} folderPath - Path to folder
  */
-async function unzipAndClean(zipPath, folderPath) {
-    console.log(`Unzipping project to '${folderPath}'`);
+async function unzipAndClean(zipPath) {
+    console.log(`Unzipping project to '${zipPath}'`);
 
     // Busy waiting for file to finish :p
     while (!fs.existsSync(zipPath)) {
@@ -85,7 +55,7 @@ async function unzipAndClean(zipPath, folderPath) {
     fs.rm(zipfile);
 
     // Walking through directory, getting rid of anything not .java
-    let dir = fs.readdirSync(folderPath);
+    let dir = fs.readdirSync(zipPath.slice(0, -4));
     for (const file of dir) {
         if (!file.endsWith('.java')) {
             // TODO: This would cause an issue if the program relies on reading files for example
@@ -97,10 +67,10 @@ async function unzipAndClean(zipPath, folderPath) {
 
     if (dir.length == 0) {
         // The directory is now empty, we can delete it
-        fs.rm(folderPath);
+        fs.rm(zipPath.slice(0, -4));
     }
 
-    console.log(`Finished unzipping project '${folderPath}'`);
+    console.log(`Finished unzipping project '${zipPath}'`);
 }
 
 /**
@@ -108,84 +78,40 @@ async function unzipAndClean(zipPath, folderPath) {
  * @param {string[]} inputProjects - List of inputted projects
  * @param {string} downloadDir - Directory to download to 
  */
-function downloadProjects(inputProjects, downloadDir) {
+async function downloadProjects(inputProjects, downloadDir) {
     let projects = getValidProjects(inputProjects);
+    let projectIndex = fs.readdirSync(downloadDir).length;
 
-    // TODO: CRY
+    for (const project of projects) {
+        let formattedURL = sanitizeURL(project);
+        if (!formattedURL) {
+            console.log(`Could not get replit for project ${project}. Invalid URL.`);
+            continue;
+        }
+        
+        let req = await fetch(formattedURL + '.zip', {
+            headers: {
+                'cookie': `connect.sid=${process.env.CONNECT_SID}`
+            }
+        });
+
+        if (req.status == 403) {
+            console.log(`403 Error - ${process.env.CONNECT_SID ? 'Expired Cookie?' : 'No cookie provided, check .env file.'}`);
+            continue;
+        } else if (req.status == 200) {
+            let splitURL = formattedURL.split('/');
+            let username = splitURL[3];
+            let projectName = splitURL[4];
+            let downloadPath = `${downloadDir}/${idx}-${username}-${projectName}.zip`;
+
+            fs.writeFileSync(downloadPath, Buffer.from(new Uint8Array(await req.blob())));
+
+            projectIndex++;
+        } else {
+            console.log(`Unknown status: ${req.status}`);
+        }
+    }
 }
-/*
-def download_projects(*input_projects: str, download_dir: str) -> None:
-    """
-    Given Input Projects Download, Unzip, & Delete unnecessary files :>
-    :param input_projects: List of inputted projects
-    :param download_dir: Directory to download to
-    :return: None
-    """
-    projects = _get_valid_projects(input_projects)
-
-    # Selenium requires absolute paths for download
-    chrome_options = webdriver.ChromeOptions()
-    prefs = {"download.default_directory": download_dir}
-    chrome_options.add_experimental_option('prefs', prefs)
-
-    # headless
-    chrome_options.headless = True
-
-    if in_replit():  # We need these settings if we're running in replit
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-
-    if in_replit():  # Don't specify path if we're not in replit
-        driver = webdriver.Chrome(options=chrome_options)
-    else:
-        # I'm not sure if repl.it can use ChromeDriverManager but it works w/o
-        ser = Service(os.path.abspath(ChromeDriverManager().install()))
-        driver = webdriver.Chrome(service=ser, options=chrome_options)
-
-    driver.get("https://replit.com/")
-
-    # Loading cookies
-    for c in _read_cookies():
-        driver.add_cookie(c)
-
-    # Getting it again cause replit is DUMB >:(
-    driver.get("https://replit.com/~")
-
-    # It'll go to login page if cookies don't work
-    if driver.current_url == "https://replit.com/login":
-        driver.quit()
-        raise RuntimeError("Reset the cookies so you actually log in")
-
-    temp_index = len(os.listdir(download_dir))  # Making so this is sorted by order you put this in :>
-
-    for proj in projects:
-        driver.get(proj)
-
-        if "404" in driver.title:  # Actually checking if link works
-            print(f"Could not get replit for project {proj}")
-            continue
-
-        formatted = _sanitize_url(f"{driver.current_url}")
-        if not formatted:  # This really shouldn't happen but it'll be fine
-            print(f"This should not occur! Could not sanitize url {driver.current_url}?")
-            continue
-
-        new_url = f"{formatted}.zip"  # Zipped url :>
-        driver.get(new_url)
-
-        if driver.current_url != new_url:  # It won't redirect if it's downloading
-            *_, user, name = formatted.split("/")
-
-            # Doing this now so we can limit how fast we download
-            _unzip_and_clean(os.path.abspath(f"{download_dir}/{name}.zip"),
-                             os.path.abspath(f"{download_dir}/{temp_index}-{user}-{name}"))
-            temp_index += 1
-        else:
-            print(f"Could not get download zip for project {proj}")
-
-    # Cleaning up
-    driver.quit()
-*/
 
 /**
  * Loads the mixins found in mixins/mixins.json
@@ -413,6 +339,11 @@ async function testProject(i, projectPath, stdInput, stdOutput, tries_left = 3) 
         stdout += chunk.toString();
     });
 
+    let stderr = '';
+    proc.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+    });
+
     // Wait for the process to complete.
     while (!proc.killed) {
         await sleep(25);
@@ -432,7 +363,7 @@ async function testProject(i, projectPath, stdInput, stdOutput, tries_left = 3) 
     }
 
     // Normalize output
-    stdout = stdout.strip().replace('\r\n', '\n');
+    stdout = (stderr == '' ? stdout : stderr).strip().replace('\r\n', '\n');
     return {
         success: stdOutput == stdout,
         status: proc.exitCode,
@@ -485,5 +416,6 @@ async function testProjects(projectPath, testPath) {
 module.exports = {
     downloadProjects,
     compileProjects,
-    testProjects
+    testProjects,
+    sanitizeURL
 };
